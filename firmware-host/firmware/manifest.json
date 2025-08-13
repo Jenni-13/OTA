@@ -1,4 +1,4 @@
 {
-  "version": "v1.3",
-  "bin_url": "https://firmware-host.onrender.com/firmware/esp32_ota_firmware_v1.3.bin"
+  "version": "v1.6",
+  "bin_url": "https://firmware-host.onrender.com/firmware/esp32_ota_firmware_v1.6.bin"
 }
