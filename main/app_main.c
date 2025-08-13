@@ -43,10 +43,10 @@ static const char *TAG = "MAIN_PROYECTO";
 #define MQTT_CLIENT_ID "2022371065" 
 #define APP_VERSION "v1.3"
 
-/* Si quieres OTA automática al inicio, coloca aquí la URL del .bin accesible por HTTP/HTTPS.
-   Si la dejas vacía (""), no hará OTA al inicio. */
-#define OTA_URL_DEFAULT "http://192.168.100.60:8000/firmware/esp32_ota_firmware_v1.3.bin"
-#define MANIFEST_URL "https://firmware-host-8vrxf29xb-jennifers-projects-f3205073.vercel.app/manifest.json"
+#define OTA_URL_DEFAULT ""  // vacía, sin OTA local
+#define MANIFEST_URL "https://firmware-host.onrender.com/firmware/manifest.json"
+
+
 
 
 /* CA root PEM del broker (REEMPLAZA con el certificado real del broker) */
@@ -258,6 +258,65 @@ static void start_ota_from_url(const char *url) {
     xTaskCreate(ota_task_from_url, "ota_task", 8192, url_copy, 5, NULL);
 }
 
+static void ota_check_manifest_task(void *pvParameter) {
+    ESP_LOGI(TAG, "Comprobando manifest remoto: %s", MANIFEST_URL);
+
+    esp_http_client_config_t config = {
+        .url = MANIFEST_URL,
+        .timeout_ms = 10000,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) {
+        ESP_LOGE(TAG, "Fallo init HTTP client manifest");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    if (esp_http_client_perform(client) != ESP_OK) {
+        ESP_LOGE(TAG, "Fallo HTTP GET manifest");
+        esp_http_client_cleanup(client);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    int content_length = esp_http_client_get_content_length(client);
+    if (content_length <= 0 || content_length > 512) {
+        ESP_LOGE(TAG, "Manifest vacio o demasiado grande");
+        esp_http_client_cleanup(client);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    char *buffer = malloc(content_length + 1);
+    if (!buffer) {
+        esp_http_client_cleanup(client);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    int read_len = esp_http_client_read(client, buffer, content_length);
+    buffer[read_len] = '\0';
+
+    char remote_version[16] = {0};
+    char remote_bin_url[256] = {0};
+
+    sscanf(buffer, "{\"version\":\"%15[^\"]\",\"bin_url\":\"%255[^\"]\"}", remote_version, remote_bin_url);
+
+    ESP_LOGI(TAG, "Manifest: version=%s, url=%s", remote_version, remote_bin_url);
+
+    if (strcmp(remote_version, APP_VERSION) != 0) {
+        ESP_LOGI(TAG, "Nueva version disponible, iniciando OTA...");
+        start_ota_from_url(remote_bin_url);  // Llama al task OTA que ya tienes
+    } else {
+        ESP_LOGI(TAG, "Firmware actualizado, no se requiere OTA.");
+    }
+
+    free(buffer);
+    esp_http_client_cleanup(client);
+    vTaskDelete(NULL);
+}
+
+
 /* --------- MQTT EVENT HANDLER ---------- */
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
     esp_mqtt_event_handle_t event = event_data;
@@ -401,4 +460,7 @@ void app_main(void) {
 
     // Crear tarea de sensor + publicación MQTT
     xTaskCreate(sensor_publish_task, "sensor_pub", 4096, NULL, 5, NULL);
+    // Chequear OTA remoto usando manifest.json
+xTaskCreate(ota_check_manifest_task, "ota_manifest", 8192, NULL, 5, NULL);
+
 }
