@@ -1,0 +1,16 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.espIdfPathWin": "c:\\Programas\\esp\\esp-idf",
+  "idf.toolsPathWin": "c:\\Programas\\esp\\.espressif",
+  "idf.pythonInstallPath": "c:\\Programas\\esp\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.openOcdConfigs": [
+    "interface/ftdi/esp32_devkitj_v1.cfg",
+    "target/esp32.cfg"
+  ],
+  "idf.customExtraVars": {
+    "OPENOCD_SCRIPTS": "C:\\Programas\\esp\\.espressif\\tools\\openocd-esp32\\v0.11.0-esp32-20221026\\openocd-esp32\\share\\openocd\\scripts",
+    "IDF_TARGET": "esp32"
+  },
+  "idf.portWin": "COM3",
+  "idf.flashType": "UART"
+}
