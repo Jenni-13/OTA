@@ -41,7 +41,7 @@ static const char *TAG = "MAIN";
 #define MQTT_PASS  "1Q2W3E4R5T6Y"
 #define MQTT_CLIENT_ID "2022371065"
 #define APP_VERSION "v1.7"
-#define MANIFEST_URL "https://firmware-host.onrender.com/manifest.json"
+#define MANIFEST_URL "https://firmware-host.onrender.com/firmware/manifest.json"
 #define TOPIC_SENSOR_DATA "esp32/sensor_data"
 #define TOPIC_OTA_ALERT "esp32/ota_alert"
 
@@ -79,13 +79,23 @@ static esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
     return ESP_OK;
 }
 
+static esp_err_t _ota_http_event_handler(esp_http_client_event_t *evt) {
+    if (evt->event_id == HTTP_EVENT_ON_CONNECTED) {
+        // Forzar que el servidor envíe datos sin compresión
+        esp_http_client_set_header(evt->client, "Accept-Encoding", "identity");
+    }
+    return ESP_OK;
+}
+
 static void start_ota_from_url(const char *url) {
     ESP_LOGI(TAG, "Iniciando OTA desde URL: %s", url);
+
     esp_http_client_config_t config = {
         .url = url,
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .event_handler = _http_event_handler,
+        .event_handler = _ota_http_event_handler, // 👈 cambiamos a handler que agrega el header
     };
+
     esp_https_ota_config_t ota_config = {
         .http_config = &config,
     };
@@ -98,6 +108,7 @@ static void start_ota_from_url(const char *url) {
         ESP_LOGE(TAG, "Fallo OTA, código de error: %s", esp_err_to_name(ret));
     }
 }
+
 /* --------- FUNCIONES SERVO ---------- */
 esp_err_t init_servo_pwm(void) {
     ledc_timer_config_t timer_conf = {
@@ -281,6 +292,7 @@ static void ota_check_task(void *pvParameter) {
             .crt_bundle_attach = esp_crt_bundle_attach,
         };
         esp_http_client_handle_t client = esp_http_client_init(&config);
+        esp_http_client_set_header(client, "Accept-Encoding", "identity");
         
         esp_err_t err = esp_http_client_perform(client);
         
