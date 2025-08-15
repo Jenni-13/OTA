@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "mqtt_ssl",
-    "project_version":    "aa814eb-dirty",
+    "project_version":    "ad98b84-dirty",
     "project_path":       "C:/programas/esp/workspace/ssl",
     "idf_path":           "C:/programas/esp/esp-idf",
     "build_dir":          "C:/programas/esp/workspace/ssl/build",
