@@ -41,7 +41,7 @@ static const char *TAG = "MAIN";
 #define MQTT_PASS  "1Q2W3E4R5T6Y"
 #define MQTT_CLIENT_ID "2022371065"
 #define APP_VERSION "v1.7"
-#define MANIFEST_URL "https://ota-cyan.vercel.app/manifest.json"
+#define MANIFEST_URL "https://firmware-black.vercel.app/manifest.json"
 
 #define TOPIC_SENSOR_DATA "esp32/sensor_data"
 #define TOPIC_OTA_ALERT "esp32/ota_alert"
