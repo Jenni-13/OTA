@@ -41,8 +41,7 @@ static const char *TAG = "MAIN";
 #define MQTT_PASS  "1Q2W3E4R5T6Y"
 #define MQTT_CLIENT_ID "2022371065"
 #define APP_VERSION "v1.7"
-#define MANIFEST_URL "https://firmware-black.vercel.app/manifest.json"
-
+#define MANIFEST_URL "https://firmware-host.onrender.com/firmware/manifest.json"
 #define TOPIC_SENSOR_DATA "esp32/sensor_data"
 #define TOPIC_OTA_ALERT "esp32/ota_alert"
 
@@ -277,78 +276,69 @@ static void ota_check_task(void *pvParameter) {
     while (1) {
         ESP_LOGI(TAG, "Comprobando actualizaciones...");
         
-        // 1. Configuración mejorada del cliente HTTP
         esp_http_client_config_t config = {
             .url = MANIFEST_URL,
             .crt_bundle_attach = esp_crt_bundle_attach,
-            .buffer_size = 2048,
-            .buffer_size_tx = 512,
-            .timeout_ms = 10000,
-            .disable_auto_redirect = false,
-            .max_redirection_count = 5,
         };
-        
         esp_http_client_handle_t client = esp_http_client_init(&config);
         
-        // 2. Headers adicionales para evitar caché
-        esp_http_client_set_header(client, "Cache-Control", "no-cache");
-        esp_http_client_set_header(client, "Pragma", "no-cache");
+        esp_err_t err = esp_http_client_perform(client);
         
-        // 3. Realizar petición
-        esp_err_t err = esp_http_client_open(client, 0);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Error al abrir conexión: %s", esp_err_to_name(err));
-            esp_http_client_cleanup(client);
-            vTaskDelay(pdMS_TO_TICKS(60000));
-            continue;
-        }
-        
-        // 4. Obtener información de la respuesta
-        int status_code = esp_http_client_get_status_code(client);
-        ESP_LOGI(TAG, "HTTP Status: %d", status_code);
-        
-        if (status_code == 200) {
-            // 5. Leer contenido
-            char *buffer = malloc(512);
-            if (!buffer) {
-                ESP_LOGE(TAG, "Error al asignar memoria");
-                esp_http_client_close(client);
-                esp_http_client_cleanup(client);
-                vTaskDelay(pdMS_TO_TICKS(60000));
-                continue;
-            }
+        if (err == ESP_OK) {
+            int status_code = esp_http_client_get_status_code(client);
+            ESP_LOGI(TAG, "HTTP Status Code: %d", status_code);
             
-            int read_len = esp_http_client_read(client, buffer, 511);
-            if (read_len > 0) {
-                buffer[read_len] = '\0';
-                ESP_LOGI(TAG, "Contenido recibido (%d bytes): %.*s", 
-                       read_len, 100, buffer); // Muestra primeros 100 caracteres
+            if (status_code == 200) {
+                char buffer[512] = {0}; 
+                int len = 0;
+                int total_len = 0;
+                do {
+                    len = esp_http_client_read(client, buffer + total_len, sizeof(buffer) - 1 - total_len);
+                    ESP_LOGI(TAG, "esp_http_client_read devolvió: %d bytes", len); // 👈 Nuevo log de depuración
+                    if (len > 0) {
+                        total_len += len;
+                    }
+                } while (len > 0 && total_len < sizeof(buffer) - 1);
                 
-                // 6. Procesar JSON
-                cJSON *root = cJSON_Parse(buffer);
-                if (root) {
-                    cJSON *version = cJSON_GetObjectItem(root, "version");
-                    cJSON *bin_url = cJSON_GetObjectItem(root, "bin_url");
-                    
-                    if (version && bin_url) {
-                        ESP_LOGI(TAG, "Versión remota: %s", version->valuestring);
+                if (total_len > 0) {
+                    buffer[total_len] = '\0';
+                    cJSON *root = cJSON_Parse(buffer);
+                    if (root) {
+                        cJSON *version = cJSON_GetObjectItem(root, "version");
+                        cJSON *bin_url = cJSON_GetObjectItem(root, "bin_url");
                         
-                        if (strcmp(version->valuestring, APP_VERSION) != 0) {
-                            ESP_LOGI(TAG, "Nueva versión disponible!");
+                        if (version && bin_url && strcmp(version->valuestring, APP_VERSION) != 0) {
+                            ESP_LOGI(TAG, "Nueva versión disponible: %s", version->valuestring);
+                            
+                            if (mqtt_client_global) {
+                                char msg[150];
+                                snprintf(msg, sizeof(msg),
+                                    "{\"matricula\":\"%s\",\"version_actual\":\"%s\",\"version_nueva\":\"%s\"}",
+                                    MQTT_CLIENT_ID, APP_VERSION, version->valuestring);
+                                
+                                int msg_id = esp_mqtt_client_publish(mqtt_client_global, "esp32/ota_alert", msg, 0, 1, 0);
+                                if (msg_id < 0) {
+                                    ESP_LOGE(TAG, "Error al publicar alerta OTA (Código: %d)", msg_id);
+                                }
+                            } else {
+                                ESP_LOGW(TAG, "MQTT no disponible para notificar OTA");
+                            }
+                            
                             start_ota_from_url(bin_url->valuestring);
                         }
+                        cJSON_Delete(root);
+                    } else {
+                        ESP_LOGE(TAG, "Error al analizar el JSON del manifiesto");
                     }
-                    cJSON_Delete(root);
                 } else {
-                    ESP_LOGE(TAG, "Error al parsear JSON");
+                    ESP_LOGE(TAG, "No se pudo leer el contenido del manifiesto");
                 }
             } else {
-                ESP_LOGE(TAG, "Error al leer contenido (leídos: %d bytes)", read_len);
+                ESP_LOGE(TAG, "El servidor devolvió un código de error HTTP: %d", status_code);
             }
-            free(buffer);
+        } else {
+            ESP_LOGE(TAG, "Error en la petición HTTP para el manifiesto: %s", esp_err_to_name(err));
         }
-        
-        esp_http_client_close(client);
         esp_http_client_cleanup(client);
         vTaskDelay(pdMS_TO_TICKS(60000));
     }
