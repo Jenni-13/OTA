@@ -23,7 +23,9 @@
 #include "cJSON.h"
 #include "esp_https_ota.h"
 
+
 static const char *TAG = "MAIN";
+
 
 /* ------------- PINOUT ------------- */
 #define TRIG_GPIO    GPIO_NUM_15
@@ -31,9 +33,11 @@ static const char *TAG = "MAIN";
 #define LED_GPIO     GPIO_NUM_2
 #define SERVO_GPIO   GPIO_NUM_21  // Cambiado a GPIO 21 para evitar conflictos
 
+
 /* ------------- PARAMS ------------- */
 #define MIN_DISTANCE 10
 #define MAX_DISTANCE 50
+
 
 /* ------------- MQTT / OTA config ------------- */
 #define BROKER_URI "mqtts://l46d1e5e.ala.us-east-1.emqxsl.com:8883"
@@ -44,11 +48,12 @@ static const char *TAG = "MAIN";
 #define MANIFEST_URL "https://firmware-host.onrender.com/firmware/manifest.json"
 #define TOPIC_SENSOR_DATA "esp32/sensor_data"
 #define TOPIC_OTA_ALERT "esp32/ota_alert"
+#define OTA_MANIFEST_MAX_SIZE 1024
 
 
 /* ------------- VARIABLES GLOBALES ------------- */
 static esp_mqtt_client_handle_t mqtt_client_global = NULL;
-static bool ota_update_detected = false;
+
 
 /* --------- DECLARACIONES DE FUNCIONES ---------- */
 static void start_ota_from_url(const char *url);
@@ -79,6 +84,7 @@ static esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
     return ESP_OK;
 }
 
+
 static esp_err_t _ota_http_event_handler(esp_http_client_event_t *evt) {
     if (evt->event_id == HTTP_EVENT_ON_CONNECTED) {
         // Forzar que el servidor envíe datos sin compresión
@@ -87,17 +93,18 @@ static esp_err_t _ota_http_event_handler(esp_http_client_event_t *evt) {
     return ESP_OK;
 }
 
+
 static void start_ota_from_url(const char *url) {
     ESP_LOGI(TAG, "Iniciando OTA desde URL: %s", url);
 
-    esp_http_client_config_t config = {
+    esp_http_client_config_t http_config = {
         .url = url,
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .event_handler = _ota_http_event_handler, // 👈 cambiamos a handler que agrega el header
+        .event_handler = _ota_http_event_handler,
     };
 
     esp_https_ota_config_t ota_config = {
-        .http_config = &config,
+        .http_config = &http_config,
     };
 
     esp_err_t ret = esp_https_ota(&ota_config);
@@ -108,6 +115,7 @@ static void start_ota_from_url(const char *url) {
         ESP_LOGE(TAG, "Fallo OTA, código de error: %s", esp_err_to_name(ret));
     }
 }
+
 
 /* --------- FUNCIONES SERVO ---------- */
 esp_err_t init_servo_pwm(void) {
@@ -121,6 +129,7 @@ esp_err_t init_servo_pwm(void) {
     esp_err_t ret = ledc_timer_config(&timer_conf);
     if(ret != ESP_OK) return ret;
 
+
     ledc_channel_config_t ch_conf = {
         .gpio_num = SERVO_GPIO,
         .speed_mode = LEDC_LOW_SPEED_MODE,
@@ -133,27 +142,29 @@ esp_err_t init_servo_pwm(void) {
     return ledc_channel_config(&ch_conf);
 }
 
+
 esp_err_t servo_set_angle(int angle) {
     if(angle < 0) angle = 0;
     if(angle > 180) angle = 180;
-    
+   
     // Mapeo de ángulo a duty cycle (valores típicos para SG90)
     // 0° -> 500 us (2.5% de 20ms)
     // 180° -> 2500 us (12.5% de 20ms)
     const int duty_min = 410; // 500us / (1000000us / 50Hz) * 8192 = 410
     const int duty_max = 2050; // 2500us / (1000000us / 50Hz) * 8192 = 2050
-    
+   
     int duty = duty_min + (int)((float)angle / 180.0f * (duty_max - duty_min));
-    
+   
     esp_err_t ret = ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
     if(ret != ESP_OK) {
         ESP_LOGE(TAG, "Error al configurar duty: %s", esp_err_to_name(ret));
         return ret;
     }
-    
+   
     ret = ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
     return ret;
 }
+
 
 /* --------- FUNCIONES: ULTRASÓNICO ---------- */
 float measure_distance_cm() {
@@ -163,8 +174,10 @@ float measure_distance_cm() {
     esp_rom_delay_us(10);
     gpio_set_level(TRIG_GPIO, 0);
 
+
     int64_t start = esp_timer_get_time();
     int64_t timeout_rise = start + 20000; // 20ms timeout para flanco de subida
+
 
     // Espera flanco de subida (ECHO == 1)
     while (gpio_get_level(ECHO_GPIO) == 0) {
@@ -174,6 +187,7 @@ float measure_distance_cm() {
         }
     }
     int64_t t1 = esp_timer_get_time();
+
 
     // Espera flanco de bajada (ECHO == 0)
     int64_t timeout_fall = t1 + 200000; // 200ms timeout para flanco de bajada
@@ -185,8 +199,10 @@ float measure_distance_cm() {
     }
     int64_t t2 = esp_timer_get_time();
 
+
     return (float)(t2 - t1) * 0.0343f / 2.0f;
 }
+
 
 /* --------- INICIALIZACIÓN DE SENSORES ---------- */
 esp_err_t init_sensors(void) {
@@ -196,11 +212,13 @@ esp_err_t init_sensors(void) {
     gpio_set_direction(ECHO_GPIO, GPIO_MODE_INPUT);
     gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
 
+
     esp_err_t ret = init_servo_pwm();
     if(ret != ESP_OK) {
         ESP_LOGE(TAG, "Error al inicializar servo PWM: %s", esp_err_to_name(ret));
         return ret;
     }
+
 
     ESP_LOGI(TAG, "Sensores inicializados correctamente");
     return ESP_OK;
@@ -214,37 +232,39 @@ static int calcular_angulo_por_distancia(float distancia_cm) {
     return (int)(180 - ((distancia_cm - MIN_DISTANCE) * (180.0f/(MAX_DISTANCE-MIN_DISTANCE))));
 }
 
+
 /* --------- TAREA PARA LA LECTURA DE SENSORES Y ENVÍO MQTT ---------- */
 static void sensor_task(void *pvParameter) {
     init_sensors();
     while (1) {
         float distancia_cm = measure_distance_cm();
-        
+       
         if (distancia_cm > 0) {
             ESP_LOGI(TAG, "Distancia medida: %.2f cm", distancia_cm);
+
 
             if (distancia_cm < MAX_DISTANCE) {
                 // Objeto detectado: mover servo, encender LED y enviar datos
                 int angulo = calcular_angulo_por_distancia(distancia_cm);
                 servo_set_angle(angulo);
                 gpio_set_level(LED_GPIO, 1);
-                
+               
                 if (mqtt_client_global) {
                     cJSON *root = cJSON_CreateObject();
                     cJSON_AddStringToObject(root, "matricula", MQTT_CLIENT_ID);
                     cJSON_AddNumberToObject(root, "distancia_cm", distancia_cm);
                     cJSON_AddNumberToObject(root, "angulo", angulo);
                     cJSON_AddStringToObject(root, "estado_led", "encendido");
-                    
+                   
                     char *json_string = cJSON_PrintUnformatted(root);
-                    
+                   
                     int msg_id = esp_mqtt_client_publish(mqtt_client_global, TOPIC_SENSOR_DATA, json_string, 0, 1, 0);
                     if (msg_id < 0) {
                         ESP_LOGE(TAG, "Error al publicar datos del sensor (Código: %d)", msg_id);
                     } else {
                         ESP_LOGI(TAG, "Datos del sensor publicados en MQTT, ID: %d", msg_id);
                     }
-                    
+                   
                     cJSON_Delete(root);
                     free(json_string);
                 } else {
@@ -254,7 +274,7 @@ static void sensor_task(void *pvParameter) {
                 // No hay objeto cerca: apagar LED y volver a la posición inicial del servo
                 gpio_set_level(LED_GPIO, 0);
                 servo_set_angle(0);
-                
+               
                 // Opcionalmente, puedes publicar un mensaje de "estado normal"
                 // No se enviarán datos si el sensor no detecta nada, como lo pediste
             }
@@ -263,21 +283,21 @@ static void sensor_task(void *pvParameter) {
     }
 }
 /* --------- MQTT EVENT HANDLER ---------- */
-static void mqtt_event_handler(void *handler_args, esp_event_base_t base, 
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                              int32_t event_id, void *event_data) {
     esp_mqtt_event_handle_t event = event_data;
-    
+   
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT conectado");
             mqtt_client_global = event->client;
             break;
-            
+           
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "MQTT desconectado");
             mqtt_client_global = NULL;
             break;
-            
+           
         default:
             break;
     }
@@ -286,84 +306,100 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 static void ota_check_task(void *pvParameter) {
     while (1) {
         ESP_LOGI(TAG, "Comprobando actualizaciones...");
-        
+
+
         esp_http_client_config_t config = {
             .url = MANIFEST_URL,
             .crt_bundle_attach = esp_crt_bundle_attach,
         };
         esp_http_client_handle_t client = esp_http_client_init(&config);
+
+
         esp_http_client_set_header(client, "Accept-Encoding", "identity");
-        
+        esp_http_client_set_header(client, "Connection", "close");
+
+
         esp_err_t err = esp_http_client_perform(client);
-        
+
+
         if (err == ESP_OK) {
             int status_code = esp_http_client_get_status_code(client);
             ESP_LOGI(TAG, "HTTP Status Code: %d", status_code);
-            
+
+
             if (status_code == 200) {
-                char buffer[512] = {0}; 
-                int len = 0;
+                char *json_buffer = malloc(OTA_MANIFEST_MAX_SIZE);
+                if (!json_buffer) {
+                    ESP_LOGE(TAG, "No hay memoria para el manifest");
+                    esp_http_client_cleanup(client);
+                    vTaskDelay(pdMS_TO_TICKS(60000));
+                    continue;
+                }
+
+
                 int total_len = 0;
+                int read_len = 0;
                 do {
-                    len = esp_http_client_read(client, buffer + total_len, sizeof(buffer) - 1 - total_len);
-                    ESP_LOGI(TAG, "esp_http_client_read devolvió: %d bytes", len); // 👈 Nuevo log de depuración
-                    if (len > 0) {
-                        total_len += len;
+                    read_len = esp_http_client_read(client, json_buffer + total_len, OTA_MANIFEST_MAX_SIZE - total_len - 1);
+                    if (read_len > 0) {
+                        total_len += read_len;
+                        if (total_len >= OTA_MANIFEST_MAX_SIZE - 1) {
+                            ESP_LOGW(TAG, "Manifest demasiado grande, truncando");
+                            break;
+                        }
                     }
-                } while (len > 0 && total_len < sizeof(buffer) - 1);
-                
+                } while (read_len > 0);
+
+
                 if (total_len > 0) {
-                    buffer[total_len] = '\0';
-                    cJSON *root = cJSON_Parse(buffer);
+                    json_buffer[total_len] = '\0';
+                    ESP_LOGI(TAG, "Manifest leído: %s", json_buffer);
+
+
+                    cJSON *root = cJSON_Parse(json_buffer);
                     if (root) {
                         cJSON *version = cJSON_GetObjectItem(root, "version");
                         cJSON *bin_url = cJSON_GetObjectItem(root, "bin_url");
-                        
+
+
                         if (version && bin_url && strcmp(version->valuestring, APP_VERSION) != 0) {
                             ESP_LOGI(TAG, "Nueva versión disponible: %s", version->valuestring);
-                            
-                            if (mqtt_client_global) {
-                                char msg[150];
-                                snprintf(msg, sizeof(msg),
-                                    "{\"matricula\":\"%s\",\"version_actual\":\"%s\",\"version_nueva\":\"%s\"}",
-                                    MQTT_CLIENT_ID, APP_VERSION, version->valuestring);
-                                
-                                int msg_id = esp_mqtt_client_publish(mqtt_client_global, "esp32/ota_alert", msg, 0, 1, 0);
-                                if (msg_id < 0) {
-                                    ESP_LOGE(TAG, "Error al publicar alerta OTA (Código: %d)", msg_id);
-                                }
-                            } else {
-                                ESP_LOGW(TAG, "MQTT no disponible para notificar OTA");
-                            }
-                            
                             start_ota_from_url(bin_url->valuestring);
                         }
                         cJSON_Delete(root);
                     } else {
-                        ESP_LOGE(TAG, "Error al analizar el JSON del manifiesto");
+                        ESP_LOGE(TAG, "Error al parsear JSON");
                     }
                 } else {
-                    ESP_LOGE(TAG, "No se pudo leer el contenido del manifiesto");
+                    ESP_LOGE(TAG, "No se pudo leer contenido del manifest");
                 }
+
+
+                free(json_buffer);
             } else {
-                ESP_LOGE(TAG, "El servidor devolvió un código de error HTTP: %d", status_code);
+                ESP_LOGE(TAG, "HTTP no OK: %d", status_code);
             }
         } else {
-            ESP_LOGE(TAG, "Error en la petición HTTP para el manifiesto: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "Error HTTP: %s", esp_err_to_name(err));
         }
+
+
         esp_http_client_cleanup(client);
         vTaskDelay(pdMS_TO_TICKS(60000));
     }
 }
+
+
 /* --------- MAIN ---------- */
 void app_main(void) {
     // Inicialización básica
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    
+   
     // Conexión WiFi
     ESP_ERROR_CHECK(example_connect());
+
 
     // Configuración MQTT
     esp_mqtt_client_config_t mqtt_cfg = {
@@ -375,9 +411,11 @@ void app_main(void) {
         .session.keepalive = 60,
     };
 
+
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(client);
+
 
     // Espera conexión MQTT
     int timeout = 0;
@@ -386,20 +424,12 @@ void app_main(void) {
         timeout++;
     }
 
+
     if (!mqtt_client_global) {
         ESP_LOGE(TAG, "No se pudo conectar a MQTT. La lógica del sensor no se ejecutará.");
     } else {
-        // Se crea la tarea de OTA, la cual, al detectar una actualización,
-        // establecerá una bandera y luego se eliminará.
+        // Se crean las tareas de forma concurrente
         xTaskCreate(ota_check_task, "ota_check", 8192, NULL, 5, NULL);
-
-        // Se espera a que la tarea de OTA detecte una actualización
-        while (!ota_update_detected) {
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-
-        // Una vez que se detecta la actualización, se inicia la tarea del sensor
-        ESP_LOGI(TAG, "Actualización detectada. Iniciando la tarea del sensor.");
         xTaskCreate(sensor_task, "sensor_task", 8192, NULL, 5, NULL);
     }
 }
